@@ -29,7 +29,8 @@ export default function Home() {
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
   const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(false); // start as false, wait for player to click
+  const [started, setStarted] = useState(false);
   const [message, setMessage] = useState("");
   const timerRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
@@ -41,6 +42,11 @@ export default function Home() {
       if (raw) setBest(Number(raw));
     } catch (e) {
       // ignore (e.g., SSR or privacy settings)
+    }
+
+    // don't start the timer until the player has started the game
+    if (!started) {
+      return;
     }
 
     // start timer when a new equation is shown
@@ -78,7 +84,7 @@ export default function Home() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equation.text]);
+  }, [equation.text, started]);
 
   function nextEquation() {
     setEquation(makeEquation());
@@ -120,82 +126,161 @@ export default function Home() {
   }
 
   function restart() {
+    // start a fresh game immediately
     setStreak(0);
     setMessage("");
     setEquation(makeEquation());
+    setStarted(true);
+    setRunning(true);
+  }
+
+  function startGame() {
+    setStarted(true);
+    setRunning(true);
+    setMessage("");
   }
 
   const pct = Math.round((timeLeft / TIME_LIMIT) * 100);
+
+  // Keyboard controls: when not started, Enter/Space/P starts the game.
+  // When running: 'C' => Correct, 'W' => Wrong.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const key = e.key.toLowerCase();
+      if (!started) {
+        if (key === " " || key === "spacebar" || e.code === "Space" || key === "enter" || key === "p") {
+          // allow starting via keyboard
+          e.preventDefault();
+          setStarted(true);
+          setRunning(true);
+          setStreak(0);
+          setEquation(makeEquation());
+        }
+        return;
+      }
+
+      // If the game has been started but is not currently running (game over),
+      // allow Space to play again.
+      if (!running) {
+        if (key === " " || key === "spacebar" || e.code === "Space") {
+          e.preventDefault();
+          restart();
+        }
+        return;
+      }
+
+      if (key === "c") {
+        e.preventDefault();
+        handleAnswer(true);
+      } else if (key === "w") {
+        e.preventDefault();
+        handleAnswer(false);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [started, running, equation.text, streak, best]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="w-full max-w-2xl p-8">
         <div className="rounded-lg bg-white p-8 shadow-md dark:bg-zinc-900">
-          <h2 className="mb-4 text-xl font-semibold">Quick Math — Correct or Wrong?</h2>
-
-          <div className="mb-4">
-            <div
-              className="mb-2 text-4xl font-bold"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {equation.text}
-            </div>
-
-            <div className="h-3 w-full rounded bg-zinc-200 dark:bg-zinc-700">
-              <div
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={pct}
-                style={{ width: `${pct}%` }}
-                className={`h-3 rounded bg-green-500 transition-[width]`}>
-              </div>
-            </div>
-          </div>
-
-          <div className="mb-4 flex gap-3">
-            <button
-              onClick={() => handleAnswer(true)}
-              className="flex-1 rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              aria-label="Mark correct"
-            >
-              Correct
-            </button>
-            <button
-              onClick={() => handleAnswer(false)}
-              className="flex-1 rounded bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              aria-label="Mark wrong"
-            >
-              Wrong
-            </button>
-          </div>
-
-          <div className="mb-2 flex items-center justify-between">
-            <div>
-              <span className="mr-2 text-sm text-zinc-600 dark:text-zinc-300">Streak</span>
-              <span className="text-lg font-bold">{streak}</span>
-              <span className="ml-3 text-sm text-zinc-500 dark:text-zinc-400">Best: {best}</span>
-            </div>
-            <div className="text-sm text-zinc-600 dark:text-zinc-300">{Math.ceil(timeLeft / 100)}s</div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <div className="text-sm text-zinc-700 dark:text-zinc-300">{message}</div>
-            <div>
+          {!started ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <h2 className="text-2xl font-bold">Quick Math — Correct or Wrong?</h2>
+              <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
+                You have 3 seconds per equation. Click Correct or Wrong to answer.
+              </p>
               <button
-                onClick={restart}
-                className="rounded bg-zinc-200 px-3 py-1 text-sm hover:bg-zinc-300"
+                onClick={() => {
+                  // start fresh
+                  setStreak(0);
+                  setEquation(makeEquation());
+                  setStarted(true);
+                  setRunning(true);
+                }}
+                className="rounded bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700"
               >
-                Restart
+                Play Game
               </button>
+              {best > 0 && (
+                <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Best streak: <span className="font-bold">{best}</span>
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <>
+              <h2 className="mb-4 text-xl font-semibold">Quick Math — Correct or Wrong?</h2>
+
+              <div className="mb-4">
+                <div
+                  className="mb-2 text-4xl font-bold"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {equation.text}
+                </div>
+
+                <div className="h-3 w-full rounded bg-zinc-200 dark:bg-zinc-700">
+                  <div
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={pct}
+                    style={{ width: `${pct}%` }}
+                    className={`h-3 rounded bg-green-500 transition-[width]`}>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-4 flex gap-3">
+                  <button
+                    onClick={() => handleAnswer(true)}
+                    className="flex-1 rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    aria-label="Mark correct"
+                  >
+                    Correct (C)
+                  </button>
+                <button
+                  onClick={() => handleAnswer(false)}
+                  className="flex-1 rounded bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  aria-label="Mark wrong"
+                >
+                  Wrong (W)
+                </button>
+              </div>
+
+                <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <span className="mr-2 text-sm text-zinc-600 dark:text-zinc-300">Streak</span>
+                  <span className="text-lg font-bold">{streak}</span>
+                  <span className="ml-3 text-sm text-zinc-500 dark:text-zinc-400">Best: {best}</span>
+                </div>
+                <div className="text-sm text-zinc-600 dark:text-zinc-300">{Math.ceil(timeLeft / 1000)}s</div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div className="text-sm text-zinc-700 dark:text-zinc-300">{message}</div>
+                <div>
+                  <button
+                    onClick={restart}
+                    className="rounded bg-green-600 px-3 py-1 text-sm font-semibold text-white hover:bg-green-700"
+                  >
+                    Play Again (Space)
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-          Click the button matching whether the equation is correct. You have 3 seconds per
-          equation. Your score is how many correct guesses you make in a row.
-        </p>
+        {started && (
+          <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+            Click the button matching whether the equation is correct. You have 3 seconds per
+            equation. Your score is how many correct guesses you make in a row.
+          </p>
+        )}
       </main>
     </div>
   );
