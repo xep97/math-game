@@ -1,64 +1,201 @@
-import Image from "next/image";
+"use client";
+
+import React, { useEffect, useRef, useState } from "react";
+
+function makeEquation() {
+  const a = Math.floor(Math.random() * 12) + 1;
+  const b = Math.floor(Math.random() * 12) + 1;
+  const ops: Array<string> = ["+", "-", "×"];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let real: number;
+  if (op === "+") real = a + b;
+  else if (op === "-") real = a - b;
+  else real = a * b;
+
+  const correct = Math.random() < 0.6; // 60% chance the shown result is correct
+  let shown = real;
+  if (!correct) {
+    const delta = Math.floor(Math.random() * 5) + 1;
+    shown = Math.random() < 0.5 ? real + delta : real - delta;
+    if (shown === real) shown = real + 1;
+  }
+
+  return { text: `${a} ${op} ${b} = ${shown}`, correct };
+}
 
 export default function Home() {
+  const TIME_LIMIT = 3000; // milliseconds
+  const [equation, setEquation] = useState(() => makeEquation());
+  const [streak, setStreak] = useState(0);
+  const [best, setBest] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
+  const [running, setRunning] = useState(true);
+  const [message, setMessage] = useState("");
+  const timerRef = useRef<number | null>(null);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // load best score from localStorage (client-only)
+    try {
+      const raw = localStorage.getItem("calc_best_score");
+      if (raw) setBest(Number(raw));
+    } catch (e) {
+      // ignore (e.g., SSR or privacy settings)
+    }
+
+    // start timer when a new equation is shown
+    setTimeLeft(TIME_LIMIT);
+    setRunning(true);
+    setMessage("");
+    startRef.current = Date.now();
+
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    timerRef.current = window.setInterval(() => {
+      if (!startRef.current) return;
+      const elapsed = Date.now() - startRef.current;
+      const left = Math.max(0, TIME_LIMIT - elapsed);
+      setTimeLeft(left);
+      if (left === 0) {
+        // timeout
+        setMessage("Time!");
+        setStreak(0);
+        setRunning(false);
+        if (timerRef.current) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      }
+    }, 40);
+
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equation.text]);
+
+  function nextEquation() {
+    setEquation(makeEquation());
+  }
+
+  function handleAnswer(choiceIsCorrect: boolean) {
+    if (!running) return;
+    if (choiceIsCorrect === equation.correct) {
+      // correct answer
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      setMessage("Correct!");
+      // update best if needed
+      if (newStreak > best) {
+        setBest(newStreak);
+        try {
+          localStorage.setItem("calc_best_score", String(newStreak));
+        } catch (e) {}
+      }
+      // small delay then next
+      setRunning(false);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setTimeout(() => {
+        nextEquation();
+      }, 180);
+    } else {
+      // wrong answer
+      setMessage("Wrong");
+      setStreak(0);
+      setRunning(false);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+  }
+
+  function restart() {
+    setStreak(0);
+    setMessage("");
+    setEquation(makeEquation());
+  }
+
+  const pct = Math.round((timeLeft / TIME_LIMIT) * 100);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+      <main className="w-full max-w-2xl p-8">
+        <div className="rounded-lg bg-white p-8 shadow-md dark:bg-zinc-900">
+          <h2 className="mb-4 text-xl font-semibold">Quick Math — Correct or Wrong?</h2>
+
+          <div className="mb-4">
+            <div
+              className="mb-2 text-4xl font-bold"
+              aria-live="polite"
+              aria-atomic="true"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              {equation.text}
+            </div>
+
+            <div className="h-3 w-full rounded bg-zinc-200 dark:bg-zinc-700">
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+                style={{ width: `${pct}%` }}
+                className={`h-3 rounded bg-green-500 transition-[width]`}>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-4 flex gap-3">
+            <button
+              onClick={() => handleAnswer(true)}
+              className="flex-1 rounded bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              aria-label="Mark correct"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              Correct
+            </button>
+            <button
+              onClick={() => handleAnswer(false)}
+              className="flex-1 rounded bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              aria-label="Mark wrong"
+            >
+              Wrong
+            </button>
+          </div>
+
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <span className="mr-2 text-sm text-zinc-600 dark:text-zinc-300">Streak</span>
+              <span className="text-lg font-bold">{streak}</span>
+              <span className="ml-3 text-sm text-zinc-500 dark:text-zinc-400">Best: {best}</span>
+            </div>
+            <div className="text-sm text-zinc-600 dark:text-zinc-300">{Math.ceil(timeLeft / 100)}s</div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-between">
+            <div className="text-sm text-zinc-700 dark:text-zinc-300">{message}</div>
+            <div>
+              <button
+                onClick={restart}
+                className="rounded bg-zinc-200 px-3 py-1 text-sm hover:bg-zinc-300"
+              >
+                Restart
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+          Click the button matching whether the equation is correct. You have 3 seconds per
+          equation. Your score is how many correct guesses you make in a row.
+        </p>
       </main>
     </div>
   );
