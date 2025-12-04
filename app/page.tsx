@@ -15,10 +15,12 @@ function makeEquation(mode: "easy" | "normal" | "hard" | "insane" = "normal") {
     ops = ["+", "-"];
     correctProb = 0.8;
   } else if (mode === "hard") {
+    // Hard: larger numbers, more multiplication, slightly lower correctness
     min = 2;
-    max = 20;
-    ops = ["+", "-", "×"];
-    correctProb = 0.45;
+    max = 30;
+    // include × twice to weight multiplication higher
+    ops = ["+", "-", "×", "×"];
+    correctProb = 0.4;
   } else if (mode === "insane") {
     // Insane mode: larger numbers, more terms, all ops, and lower chance of being correct
     min = 2;
@@ -89,6 +91,52 @@ function makeEquation(mode: "easy" | "normal" | "hard" | "insane" = "normal") {
     }
 
     // build text
+    let txt = String(terms[0]);
+    for (let i = 0; i < chosenOps.length; i++) {
+      txt += ` ${chosenOps[i]} ${terms[i + 1]}`;
+    }
+    return { text: `${txt} = ${shown}`, correct };
+  }
+
+  // Occasionally make a 3-term expression in hard mode (adds extra difficulty)
+  if (mode === "hard" && Math.random() < 0.25) {
+    const termCount = 3;
+    const terms: number[] = [];
+    const chosenOps: string[] = [];
+    for (let i = 0; i < termCount; i++) {
+      terms.push(Math.floor(Math.random() * (max - min + 1)) + min);
+      if (i < termCount - 1) chosenOps.push(ops[Math.floor(Math.random() * ops.length)]);
+    }
+
+    let real = terms[0];
+    for (let i = 0; i < chosenOps.length; i++) {
+      const op = chosenOps[i];
+      const val = terms[i + 1];
+      if (op === "+") real = real + val;
+      else if (op === "-") real = real - val;
+      else real = real * val;
+    }
+
+    const correct = Math.random() < correctProb;
+    let shown = real;
+    if (!correct) {
+      // small but noticeable mistake
+      const idx = Math.floor(Math.random() * terms.length);
+      const delta = Math.max(2, Math.floor(Math.abs(real) * 0.12)) + Math.floor(Math.random() * 8);
+      const newTerms = terms.slice();
+      newTerms[idx] = newTerms[idx] + (Math.random() < 0.5 ? delta : -delta);
+      let r = newTerms[0];
+      for (let i = 0; i < chosenOps.length; i++) {
+        const op = chosenOps[i];
+        const val = newTerms[i + 1];
+        if (op === "+") r = r + val;
+        else if (op === "-") r = r - val;
+        else r = r * val;
+      }
+      shown = r;
+      if (shown === real) shown = real + (Math.floor(Math.random() * 3) + 1);
+    }
+
     let txt = String(terms[0]);
     for (let i = 0; i < chosenOps.length; i++) {
       txt += ` ${chosenOps[i]} ${terms[i + 1]}`;
